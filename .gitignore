@@ -1,0 +1,23 @@
+# Virtual environment
+.venv/
+venv/
+
+# Byte-code files
+*.pyc
+__pycache__/
+
+# Environment variables
+.env
+
+# Editor/IDE specific files
+.vscode/
+.idea/
+
+# Test and coverage reports
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Operating System files
+.DS_Store
+Thumbs.db
