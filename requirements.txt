@@ -1,0 +1,5 @@
+python-dotenv
+aiosmtplib
+pytest
+openpyxl
+Jinja2
