@@ -7,14 +7,33 @@ For any non-standard library used, Context7 MCP will be explored for best practi
 """
 
 import logging
+from enum import Enum 
 from typing import List, Optional
+import secrets # Import secrets for UID generation
 
 import pandas as pd
-from pydantic import BaseModel, EmailStr, ValidationError
+from pydantic import BaseModel, EmailStr, ValidationError, Field, model_validator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class Mode(str, Enum):
+    """
+    Enum for the mode of mail.
+    """
+    CAMP = "camp"
+    LEAD = "lead"
+    CLIENT = "client"
+    ADHOC = "adhoc"
+
+class MailType(str, Enum):
+    """
+    Enum for the type of mail.
+    """
+    INTRO = "intro"
+    FOLLOWUP = "followup"
+    REPLY = "reply"
 
 class MailSession(BaseModel):
     """
@@ -22,6 +41,20 @@ class MailSession(BaseModel):
     """
     recipient_email: EmailStr
     recipient_name: Optional[str] = None
+    mail_type: MailType = Field(..., description="Type of mail, e.g., 'intro', 'followup'")
+    mode: Mode = Field(Mode.CAMP, description="Mode of mail, e.g., 'camp', 'lead', 'adhoc'")
+    uid: str = Field(default_factory=lambda: "", exclude=True, description="Unique identifier for the mail session, auto-generated")
+
+    @model_validator(mode='after')
+    def generate_uid(self) -> 'MailSession':
+        """
+        Generates a unique ID for the mail session upon initialization.
+        UID format: <mode>_<mail_type>_<short_hex>
+        """
+        if not self.uid: # Only generate if UID is not already set
+            short_hex = secrets.token_hex(2) # Generates a 4-character hex string
+            self.uid = f"{self.mode.value}_{self.mail_type.value}_{short_hex}"
+        return self
 
 def load_from_excel(path: str) -> List[MailSession]:
     """
@@ -43,8 +76,12 @@ def load_from_excel(path: str) -> List[MailSession]:
                 # Assuming 'recipient_email' and 'recipient_name' are column names in the Excel file
                 # Adjust column names as per your Excel file structure
                 session_data = {
-                    "recipient_email": row.get("recipient_email"),
-                    "recipient_name": row.get("recipient_name")
+                    "recipient_email": row.get("Email"),
+                    "recipient_name": row.get("Name") if pd.notna(row.get("Name")) else None,
+                    # mail_type is a required field | Options: INTRO, FOLLOWUP, REPLY
+                    "mail_type": MailType.INTRO,
+                    # mode has a default value (Mode.CAMP) | Options: CAMP, LEAD, CLIENT, ADHOC
+                    "mode": Mode.CAMP
                 }
                 mail_session = MailSession.model_validate(session_data)
                 mail_sessions.append(mail_session)

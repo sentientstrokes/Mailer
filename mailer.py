@@ -132,49 +132,74 @@ def create_email(from_email: str,
 #########################################
 # Asynchronous Email Sending
 #########################################
-async def send_emails(sessions: List[MailSession], subject: str, template_path: str, attachment_path: str = None, max_emails_per_session: int = None):
+async def send_emails(
+    sessions: List[MailSession],subject: str, template_path: str, 
+    attachment_path: str = None, max_emails_per_session: int = None,
+    batch_size: int = 20, delay_between_batches: int = 10,) -> tuple[int, int]:
     """
-    Establishes an asynchronous SMTP connection, logs in, and sends personalized emails to multiple recipients.
+    Sends emails in batches with delays to prevent SMTP throttling.
 
     Args:
-        sessions (List[MailSession]): A list of MailSession objects containing recipient data.
-        subject (str): The subject of the email.
-        template_path (str): The path to the HTML template file.
-        attachment_path (str, optional): The path to an optional attachment file. Defaults to None.
-        max_emails_per_session (int, optional): Maximum number of emails to send per session. Defaults to None (no limit).
+        sessions (List[MailSession]): List of recipients.
+        subject (str): Email subject.
+        template_path (str): Path to HTML template.
+        attachment_path (str, optional): Optional attachment file path.
+        max_emails_per_session (int, optional): Max emails to send in total.
+        batch_size (int): Number of emails per batch.
+        delay_between_batches (int): Delay (in seconds) between batches.
+
+    Returns:
+        tuple: (sent_count, failure_count)
     """
     from_email, gmail_app_pass = load_environment_variables()
-
     smtp = aiosmtplib.SMTP(hostname="smtp.gmail.com", port=587, start_tls=True)
+
+    sent_count = 0
+    failure_count = 0
 
     try:
         await smtp.connect()
         await smtp.login(from_email, gmail_app_pass)
 
-        sent_count = 0
-        for session in sessions:
-            if max_emails_per_session is not None and sent_count >= max_emails_per_session:
-                logger.info(f"Throttling limit reached. Sent {sent_count} emails. Stopping.")
-                break
+        total_batches = (len(sessions) + batch_size - 1) // batch_size
 
-            try:
-                # Render personalized HTML content
-                personalized_html_content = render_html(template_path, session)
-                
-                msg = create_email(from_email, session.recipient_email, subject, personalized_html_content, attachment_path)
-                await smtp.send_message(msg)
-                logger.info(f"Successfully sent email to {session.recipient_email}")
-                sent_count += 1
-            except Exception as e:
-                logger.error(f"Failed to send email to {session.recipient_email}: {e}")
+        for batch_index in range(total_batches):
+            start = batch_index * batch_size
+            end = start + batch_size
+            batch = sessions[start:end]
+
+            logger.info(f"📤 Sending batch {batch_index + 1}/{total_batches} with {len(batch)} emails...")
+
+            for session in batch:
+                if max_emails_per_session is not None and sent_count >= max_emails_per_session:
+                    logger.info(f"Throttling limit reached. Sent {sent_count} emails. Stopping.")
+                    return sent_count, failure_count
+
+                try:
+                    html = render_html(template_path, session)
+                    msg = create_email(from_email, session.recipient_email, subject, html, attachment_path)
+                    await smtp.send_message(msg)
+                    logger.info(f"✅ Sent email to {session.recipient_email}")
+                    sent_count += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to send to {session.recipient_email}: {e}")
+                    failure_count += 1
+
+            # Delay between Batches
+            if batch_index + 1 < total_batches:
+                logger.info(f"⏳ Sleeping for {delay_between_batches} seconds before next batch...")
+                await asyncio.sleep(delay_between_batches)
+
     except Exception as e:
-        logger.error(f"An error occurred during SMTP connection or login: {e}")
+        logger.error(f"🚨 SMTP error: {e}")
     finally:
         if smtp.is_connected:
             try:
                 await smtp.quit()
             except Exception as e:
                 logger.error(f"Error during SMTP quit: {e}")
+
+    return sent_count, failure_count
 
 
 #########################################
@@ -195,18 +220,37 @@ if __name__ == "__main__":
     # For now, let's use a hardcoded list for demonstration
     
     # Example of loading from a dummy Excel file (uncomment and create file for actual testing)
-    # from data_loader import load_from_excel
-    # dummy_excel_path = "dummy_recipients.xlsx" # Make sure this file exists for testing
-    # sessions = load_from_excel(dummy_excel_path)
+    from data_loader import load_from_excel
+    Excel_File = "/Users/anshumanngupta/Documents/SHOE MAIL.xlsx" # Make sure this file exists for testing
+    sessions, total_rows, skipped_rows = load_from_excel(Excel_File)
 
     # Hardcoded sessions for initial testing if no Excel file is available
-    sessions = [
-        MailSession(recipient_email="princekumarpk1920@gmail.com", recipient_name="Prince"), # User's current recipient
-        MailSession(recipient_email="vermakiwi17@gmail.com", recipient_name="Nisha is it working?"),
-        MailSession(recipient_email="anshuman.iskcon@gmail.com") # No recipient name
-    ]
+    # sessions = [
+    #     MailSession(recipient_email="sndd.gkg11@gmail.com", recipient_name="Sonu Gupta"), # User's current recipient 
+    #     MailSession(recipient_email="contact@shemeka.in"),
+    #     MailSession(recipient_email="anshuman.iskcon@gmail.com") # No recipient name
+    # ]
 
+    from datetime import datetime
+
+    # Track script duration
+    start_time = datetime.now()
     try:
-        asyncio.run(send_emails(sessions, EMAIL_SUBJECT, HTML_TEMPLATE_PATH, ATTACHMENT_FILE, MAX_EMAILS_PER_SESSION))
+        sent_count, failure_count = asyncio.run(send_emails(
+            sessions, EMAIL_SUBJECT, HTML_TEMPLATE_PATH, ATTACHMENT_FILE, MAX_EMAILS_PER_SESSION
+        ))
     except Exception as e:
         logger.error(f"Script execution failed: {e}")
+        sent_count = 0
+        failure_count = 0
+    finally:
+        end_time = datetime.now()
+        duration = (end_time - start_time).total_seconds()
+
+        logger.info("\n\n📊 SUMMARY REPORT")
+        logger.info(f"Total rows in Excel       : {total_rows}")
+        logger.info(f"Rows skipped (no email)   : {skipped_rows}")
+        logger.info(f"Valid emails processed    : {len(sessions)}")
+        logger.info(f"✅ Emails successfully sent: {sent_count}")
+        logger.info(f"❌ Emails failed to send   : {failure_count}")
+        logger.info(f"Total time taken (sec)    : {duration:.2f}s\n")
