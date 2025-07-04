@@ -179,7 +179,7 @@ async def send_emails(
                     html = render_html(template_path, session)
                     msg = create_email(from_email, session.recipient_email, subject, html, attachment_path)
                     await smtp.send_message(msg)
-                    logger.info(f"✅ Sent email to {session.recipient_email}")
+                    logger.info(f"✅ Sent email to {session.recipient_email} (UID: {session.uid})")
                     sent_count += 1
                 except Exception as e:
                     logger.error(f"❌ Failed to send to {session.recipient_email}: {e}")

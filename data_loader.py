@@ -41,6 +41,7 @@ class MailSession(BaseModel):
     """
     recipient_email: EmailStr
     recipient_name: Optional[str] = None
+    campaign_id: int = Field(..., description="Campaign ID, manually provided during initialization.")
     mail_type: MailType = Field(..., description="Type of mail, e.g., 'intro', 'followup'")
     mode: Mode = Field(Mode.CAMP, description="Mode of mail, e.g., 'camp', 'lead', 'adhoc'")
     uid: str = Field(default_factory=lambda: "", exclude=True, description="Unique identifier for the mail session, auto-generated")
@@ -49,11 +50,11 @@ class MailSession(BaseModel):
     def generate_uid(self) -> 'MailSession':
         """
         Generates a unique ID for the mail session upon initialization.
-        UID format: <mode>_<mail_type>_<short_hex>
+        UID format: {mode}{campaign_id:04}_{mail_type}_{short_hex}
         """
         if not self.uid: # Only generate if UID is not already set
             short_hex = secrets.token_hex(2) # Generates a 4-character hex string
-            self.uid = f"{self.mode.value}_{self.mail_type.value}_{short_hex}"
+            self.uid = f"{self.mode.value}{self.campaign_id:04d}_{self.mail_type.value}_{short_hex}"
         return self
 
 def load_from_excel(path: str) -> List[MailSession]:
@@ -81,14 +82,16 @@ def load_from_excel(path: str) -> List[MailSession]:
                     # mail_type is a required field | Options: INTRO, FOLLOWUP, REPLY
                     "mail_type": MailType.INTRO,
                     # mode has a default value (Mode.CAMP) | Options: CAMP, LEAD, CLIENT, ADHOC
-                    "mode": Mode.CAMP
+                    "mode": Mode.CAMP,
+                    # Hardcoded Campaign ID that will later be defined by AI
+                    "campaign_id": 1001
                 }
                 mail_session = MailSession.model_validate(session_data)
                 mail_sessions.append(mail_session)
             except ValidationError as e:
-                logger.error(f"Skipping row {index + 1} due to validation error: {e} - Data: {row.to_dict()}")
+                logger.error(f"Skipping Row #{index + 1} due to validation error: {e} - Data: {row.to_dict()}")
             except Exception as e:
-                logger.error(f"Skipping row {index + 1} due to unexpected error: {e} - Data: {row.to_dict()}")
+                logger.error(f"Skipping Row #{index + 1} due to unexpected error: {e} - Data: {row.to_dict()}")
     except FileNotFoundError:
         logger.error(f"Error: Excel file not found at {path}")
     except Exception as e:
@@ -135,9 +138,9 @@ if __name__ == "__main__":
     # logger.info(f"Dummy Excel file created at {dummy_excel_path}")
 
     # Load data from the dummy Excel file
-    # sessions = load_from_excel(dummy_excel_path)
-    # for session in sessions:
-    #     logger.info(f"Loaded session: {session.recipient_email}, {session.recipient_name}")
+    sessions = load_from_excel("/Users/anshumanngupta/Documents/trialExcel.xlsx")
+    for session in sessions:
+        logger.info(f"Loaded session: {session.recipient_email}, {session.recipient_name}")
 
     # Example of calling stub functions
     # crm_sessions = load_from_crm("your_api_key")
