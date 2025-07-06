@@ -8,13 +8,29 @@ from email import encoders
 from dotenv import load_dotenv
 import aiosmtplib
 import logging
-from typing import List # Added import for List
+from typing import List, Optional # Added import for List and Optional
 from jinja2 import Environment, FileSystemLoader, TemplateError
 from data_loader import load_from_excel, MailSession
+from supabase import create_client, Client
+from dotenv import load_dotenv 
 
 # Configure logging for mailer.py
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+#########################################
+# Supabase Client Initialization
+#########################################
+load_dotenv() # Load .env here
+SUPABASE_URL: str = os.environ.get("SUPABASE_URL")
+SUPABASE_API_KEY: str = os.environ.get("SUPABASE_API_KEY")
+
+if not SUPABASE_URL or not SUPABASE_API_KEY:
+    logger.error("SUPABASE_URL or SUPABASE_API_KEY not found in .env file. Supabase interactions will be skipped.")
+    supabase = None
+else:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_API_KEY)
+    logger.info("Supabase client initialized in mailer.py.")
 
 #########################################
 # Environment Configuration
@@ -130,12 +146,48 @@ def create_email(from_email: str,
 
 
 #########################################
+# Supabase Data Logging
+#########################################
+async def mail_data_to_supabase(
+    mic: str,
+    receiver_name: Optional[str],
+    mail_id: str,
+    mail_type: str,
+    mode: str,
+    subject: Optional[str]
+):
+    """
+    Logs email metadata to the Supabase email_events table.
+    """
+    if not mic or not mail_id:
+        logger.warning(f"⚠️Skipping Supabase insertion: 'mic' ({mic}) or 'mail_id' ({mail_id}) is missing or empty.")
+        return
+
+    if not supabase:
+        logger.warning("⚠️Supabase client not initialized. Skipping data logging to Supabase.")
+        return
+
+    try:
+        data_to_insert = {
+            "mic": mic,
+            "receiver_name": receiver_name,
+            "mail_id": mail_id,
+            "mail_type": mail_type,
+            "mode": mode,
+            "subject": subject
+        }
+        response = supabase.table('email_events').insert(data_to_insert).execute()
+        logger.info(f"📶Successfully logged email event to Supabase for MIC: {mic}")
+    except Exception as e:
+        logger.error(f"⚠️Error logging email event to Supabase for MIC {mic}: {e}")
+
+#########################################
 # Asynchronous Email Sending
 #########################################
 async def send_emails(
-    sessions: List[MailSession],subject: str, template_path: str, 
+    sessions: List[MailSession],subject: str, template_path: str,
     attachment_path: str = None, max_emails_per_session: int = None,
-    batch_size: int = 20, delay_between_batches: int = 10,) -> tuple[int, int]:
+    batch_size: int = 50, delay_between_batches: int = 10,) -> tuple[int, int]:
     """
     Sends emails in batches with delays to prevent SMTP throttling.
 
@@ -180,6 +232,15 @@ async def send_emails(
                     msg = create_email(from_email, session.recipient_email, subject, html, attachment_path)
                     await smtp.send_message(msg)
                     logger.info(f"✅ Sent email to {session.recipient_email} (MIC: {session.mic})")
+                    # Log email data to Supabase
+                    await mail_data_to_supabase(
+                        mic=session.mic,
+                        receiver_name=session.recipient_name,
+                        mail_id=session.recipient_email,
+                        mail_type=session.mail_type.value,
+                        mode=session.mode.value,
+                        subject=subject
+                    )
                     sent_count += 1
                 except Exception as e:
                     logger.error(f"❌ Failed to send to {session.recipient_email}: {e}")
@@ -220,16 +281,16 @@ if __name__ == "__main__":
     # For now, let's use a hardcoded list for demonstration
     
     # Example of loading from a dummy Excel file (uncomment and create file for actual testing)
-    from data_loader import load_from_excel
-    Excel_File = "/Users/anshumanngupta/Documents/SHOE MAIL.xlsx" # Make sure this file exists for testing
-    sessions, total_rows, skipped_rows = load_from_excel(Excel_File)
+    # from data_loader import load_from_excel
+    # Excel_File = "/Users/anshumanngupta/Documents/trialExcel.xlsx" # Make sure this file exists for testing
+    # sessions, total_rows, skipped_rows = load_from_excel(Excel_File)
 
     # Hardcoded sessions for initial testing if no Excel file is available
-    # sessions = [
+    sessions = [
     #     MailSession(recipient_email="sndd.gkg11@gmail.com", recipient_name="Sonu Gupta"), # User's current recipient 
     #     MailSession(recipient_email="contact@shemeka.in"),
-    #     MailSession(recipient_email="anshuman.iskcon@gmail.com") # No recipient name
-    # ]
+        MailSession(recipient_email="anshuman.iskcon@gmail.com", mode = "intro", mail_type = "adhoc", campaign_id = 1001) # No recipient name
+    ]
 
     from datetime import datetime
 

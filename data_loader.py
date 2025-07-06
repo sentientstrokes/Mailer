@@ -43,8 +43,8 @@ class MailSession(BaseModel):
     recipient_name: Optional[str] = None
     campaign_id: int = Field(..., description="Campaign ID, manually provided during initialization.")
     mail_type: MailType = Field(..., description="Type of mail, e.g., 'intro', 'followup'")
-    mode: Mode = Field(Mode.CAMP, description="Mode of mail, e.g., 'camp', 'lead', 'adhoc'")
-    mic: str = Field(default_factory=lambda: "", exclude=True, description="Mail Identifying Code | Unique identifier for the mail session, auto-generated")
+    mode: Mode = Field(..., description="Mode of mail, e.g., 'camp', 'lead', 'adhoc'")
+    mic: str = Field(default_factory=lambda: "", description="Mail Identifying Code | Unique identifier for the mail session, auto-generated")
 
     @model_validator(mode='after')
     def generate_mic(self) -> 'MailSession':
@@ -79,10 +79,10 @@ def load_from_excel(path: str) -> List[MailSession]:
                 session_data = {
                     "recipient_email": row.get("Email"),
                     "recipient_name": row.get("Name") if pd.notna(row.get("Name")) else None,
-                    # mail_type is a required field | Options: INTRO, FOLLOWUP, REPLY
+                    # mode is a required field | Options: INTRO, FOLLOWUP, REPLY
                     "mode": Mode.INTRO,
-                    # mode has a default value (Mode.CAMP) | Options: CAMP, LEAD, CLIENT, ADHOC
-                    "mail_type": MailType.CAMP,
+                    # mail_type has a default value (Mode.CAMP) | Options: CAMP, LEAD, CLIENT, ADHOC
+                    "mail_type": MailType.ADHOC,
                     # Hardcoded Campaign ID that will later be defined by AI
                     "campaign_id": 1001
                 }
@@ -96,7 +96,10 @@ def load_from_excel(path: str) -> List[MailSession]:
         logger.error(f"Error: Excel file not found at {path}")
     except Exception as e:
         logger.error(f"Error loading Excel file {path}: {e}")
-    return mail_sessions
+    total_rows = len(df)
+    skipped_rows = total_rows - len(mail_sessions)
+    return mail_sessions, total_rows, skipped_rows
+
 
 def load_from_crm(api_key: str) -> List[MailSession]:
     """

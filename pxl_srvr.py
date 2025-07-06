@@ -80,7 +80,7 @@ async def pxl_gif(request: Request, mic: Optional[str] = None):
     if mic and supabase:
         try:
             # Fetch current data to check for nulls and increment open_count
-            response = await supabase.table('email_events').select('*').eq('mic', mic).execute()
+            response = supabase.table('email_events').select('*').eq('mic', mic).execute()
             data = response.data
 
             if data:
@@ -104,7 +104,8 @@ async def pxl_gif(request: Request, mic: Optional[str] = None):
                     update_payload['user_agent'] = request.headers.get("User-Agent")
 
                 if update_payload:
-                    await supabase.table('email_events').update(update_payload).eq('mic', mic).execute()
+                    logger.info(f"Updating MIC {mic} with payload: {update_payload}")
+                    supabase.table('email_events').update(update_payload).eq('mic', mic).execute()
                     logger.info(f"Supabase updated for MIC: {mic}")
                 else:
                     logger.info(f"No new data to update for MIC: {mic}")

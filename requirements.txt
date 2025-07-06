@@ -3,3 +3,7 @@ aiosmtplib
 pytest
 openpyxl
 Jinja2
+fastapi
+uvicorn
+httpx
+supabase
