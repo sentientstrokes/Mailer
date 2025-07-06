@@ -18,7 +18,7 @@ from pydantic import BaseModel, EmailStr, ValidationError, Field, model_validato
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class Mode(str, Enum):
+class MailType(str, Enum):
     """
     Enum for the mode of mail.
     """
@@ -27,7 +27,7 @@ class Mode(str, Enum):
     CLIENT = "client"
     ADHOC = "adhoc"
 
-class MailType(str, Enum):
+class Mode(str, Enum):
     """
     Enum for the type of mail.
     """
@@ -44,17 +44,17 @@ class MailSession(BaseModel):
     campaign_id: int = Field(..., description="Campaign ID, manually provided during initialization.")
     mail_type: MailType = Field(..., description="Type of mail, e.g., 'intro', 'followup'")
     mode: Mode = Field(Mode.CAMP, description="Mode of mail, e.g., 'camp', 'lead', 'adhoc'")
-    uid: str = Field(default_factory=lambda: "", exclude=True, description="Unique identifier for the mail session, auto-generated")
+    mic: str = Field(default_factory=lambda: "", exclude=True, description="Mail Identifying Code | Unique identifier for the mail session, auto-generated")
 
     @model_validator(mode='after')
-    def generate_uid(self) -> 'MailSession':
+    def generate_mic(self) -> 'MailSession':
         """
-        Generates a unique ID for the mail session upon initialization.
-        UID format: {mode}{campaign_id:04}_{mail_type}_{short_hex}
+        Generates a unique ID (Mail Identifying Code) for the mail session upon initialization.
+        mic format: {mail_type}{campaign_id:04}_{mode}_{short_hex}
         """
-        if not self.uid: # Only generate if UID is not already set
+        if not self.mic: # Only generate if mic is not already set
             short_hex = secrets.token_hex(2) # Generates a 4-character hex string
-            self.uid = f"{self.mode.value}{self.campaign_id:04d}_{self.mail_type.value}_{short_hex}"
+            self.mic = f"{self.mail_type.value}{self.campaign_id:04d}_{self.mode.value}_{short_hex}"
         return self
 
 def load_from_excel(path: str) -> List[MailSession]:
@@ -80,9 +80,9 @@ def load_from_excel(path: str) -> List[MailSession]:
                     "recipient_email": row.get("Email"),
                     "recipient_name": row.get("Name") if pd.notna(row.get("Name")) else None,
                     # mail_type is a required field | Options: INTRO, FOLLOWUP, REPLY
-                    "mail_type": MailType.INTRO,
+                    "mode": Mode.INTRO,
                     # mode has a default value (Mode.CAMP) | Options: CAMP, LEAD, CLIENT, ADHOC
-                    "mode": Mode.CAMP,
+                    "mail_type": MailType.CAMP,
                     # Hardcoded Campaign ID that will later be defined by AI
                     "campaign_id": 1001
                 }
@@ -140,7 +140,7 @@ if __name__ == "__main__":
     # Load data from the dummy Excel file
     sessions = load_from_excel("/Users/anshumanngupta/Documents/trialExcel.xlsx")
     for session in sessions:
-        logger.info(f"Loaded session: {session.recipient_email}, {session.recipient_name}")
+        logger.info(f"Loaded session: {session.recipient_email}, {session.recipient_name} (MIC: {session.mic})")
 
     # Example of calling stub functions
     # crm_sessions = load_from_crm("your_api_key")
